@@ -1,0 +1,21 @@
+- insert:
+    - id: stall-guard
+      name: '@local/dsh-stall-guard'
+      config:
+        enabled: true
+        watchMode: exact
+        watchRoutes: []
+        watchRegex: ''
+        judge:
+          provider: magpie
+          model: workbuddy/deepseek-v4.1-flash
+          reasoningEffort: low
+        mode: suggest
+        autoRounds: 2
+        minTurnSteps: 1
+        maxHistoryMessages: 12
+        allowPrematureStop: false
+        confirmRewrite: false
+        resumeStyle: guided
+        resumeText: ''
+        judgeTimeoutMs: 60000
