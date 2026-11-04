@@ -582,15 +582,26 @@ export function apply(ctx, config) {
       const previous = rounds.get(settled.sessionId);
       const used = previous?.turn === turn ? previous.count : 0;
       if (used >= plan.settings.autoRounds) return;
-      // `session/event` fires synchronously inside Session.append. Queue the
-      // follow-up outside that publication window; appending from the listener
-      // itself would be a reentrant session append.
-      queueMicrotask(() => {
-        const live = ctx.agents.get(settled.sessionId);
-        if (live === undefined) return;
+      // `session/event` fires synchronously inside Session.append, so the
+      // follow-up has to wait until the current append returns and the loop
+      // reaches idle. `whenIdle()` is the correct boundary: a follow-up sent
+      // while the loop is still running only sits in the next-turn inbox
+      // without a wake.
+      const live = ctx.agents.get(settled.sessionId);
+      if (live === undefined) return;
+      const resume = () => {
+        const current = ctx.agents.get(settled.sessionId);
+        if (current === undefined) return;
         rounds.set(settled.sessionId, { turn, count: used + 1 });
-        live.followup(resumeMessage('continue', plan.reason, plan.settings.confirmRewrite, plan.settings));
-      });
+        current.followup(resumeMessage('continue', plan.reason, plan.settings.confirmRewrite, plan.settings));
+      };
+      if (typeof live.whenIdle === 'function') {
+        live.whenIdle().then(resume).catch((error) => {
+          ctx.logger?.warn?.(`stall-guard: auto-resume failed: ${String(error)}`);
+        });
+      } else {
+        setTimeout(resume, 0);
+      }
     });
     return () => {
       offStopping();

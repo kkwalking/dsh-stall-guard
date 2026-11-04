@@ -17,7 +17,7 @@ DeepSeek Harness 的「断流守卫」插件：监测指定模型的轮次收尾
 2. 从 session 事件中提取本轮的用户指令、工具调用和最后一条 assistant 文本。
 3. 通过 `ctx.llm.prepareCall()` 调用判定模型，要求它只返回一行 JSON：
    `{"verdict":"continue|finished|uncertain","reason":"..."}`。
-4. 记录判定结果；如果模式为 `auto-continue` 且判定为 `continue`，在 `turn/end` 之后通过 `agent.followup()` 续跑。`followup()` 会真正开启下一轮，而不是 `steer()` 那种只在同一步内追加输入。
+4. 记录判定结果；如果模式为 `auto-continue` 且判定为 `continue`，等当前轮次真正 idle 后通过 `agent.followup()` 续跑，避免消息停在排队队列。`followup()` 会真正开启下一轮，而不是 `steer()` 那种只在同一步内追加输入。
 5. `pending` 状态按 session 隔离，避免多个会话并发收尾时相互覆盖。
 
 ## 面板
