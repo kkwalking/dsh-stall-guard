@@ -2,6 +2,35 @@
 
 DeepSeek Harness 的「断流守卫」插件：监测指定模型的轮次收尾，发现「文本说完了、但没有工具调用却结束了」的截断时，用另一个模型复查，并提示或自动续跑。
 
+## 安装
+
+插件是一个本地 DSH profile 插件。把插件目录链接到目标 profile 的依赖：
+
+```json
+{
+  "dependencies": {
+    "@local/dsh-stall-guard": "link:/path/to/dsh-stall-guard"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "@local/dsh-stall-guard"
+      ]
+    }
+  }
+}
+```
+
+然后在该 profile 目录执行依赖安装：
+
+```bash
+dsh plugin --profile <profile-name> install
+```
+
+最后完全重启 DeepSeek Harness。插件客户端 bundle 在 Web boot 阶段加载，修改 `client.js` 后仅刷新页面不保证生效。
+
 ## 功能
 
 - 监测配置中指定的模型，在每个轮次收尾时检查是否被截断。
@@ -10,15 +39,6 @@ DeepSeek Harness 的「断流守卫」插件：监测指定模型的轮次收尾
 - 支持「纯继续」和「带引导语」两种续跑文案，可自定义文案。
 - 配置页提供当前模型列表下拉选择、正则匹配和实时匹配结果。
 - 单步收尾也会复查：流式输出最常死在第一步，不会被 `minTurnSteps` 过滤。
-
-## 工作方式
-
-1. 监听 `agent/turn-stopping`，在轮次边界仍打开时读取本轮的会话事件。
-2. 从 session 事件中提取本轮的用户指令、工具调用和最后一条 assistant 文本。
-3. 通过 `ctx.llm.prepareCall()` 调用判定模型，要求它只返回一行 JSON：
-   `{"verdict":"continue|finished|uncertain","reason":"..."}`。
-4. 记录判定结果；如果模式为 `auto-continue` 且判定为 `continue`，等当前轮次真正 idle 后通过 `agent.followup()` 续跑，避免消息停在排队队列。`followup()` 会真正开启下一轮，而不是 `steer()` 那种只在同一步内追加输入。
-5. `pending` 状态按 session 隔离，避免多个会话并发收尾时相互覆盖。
 
 ## 面板
 
@@ -59,35 +79,6 @@ DeepSeek Harness 的「断流守卫」插件：监测指定模型的轮次收尾
 
 精确选择为空，或正则没有匹配到任何模型时，插件不会监测任何路由。
 
-## 安装
-
-插件是一个本地 DSH profile 插件。把插件目录链接到目标 profile 的依赖：
-
-```json
-{
-  "dependencies": {
-    "@local/dsh-stall-guard": "link:/path/to/dsh-stall-guard"
-  },
-  "dsh": {
-    "profile": {
-      "bundles": [
-        "@deepseek-ai/dsh-base",
-        "@deepseek-ai/dsh-web-app",
-        "@local/dsh-stall-guard"
-      ]
-    }
-  }
-}
-```
-
-然后在该 profile 目录执行依赖安装：
-
-```bash
-dsh plugin --profile <profile-name> install
-```
-
-最后完全重启 DeepSeek Harness。插件客户端 bundle 在 Web boot 阶段加载，修改 `client.js` 后仅刷新页面不保证生效。
-
 ## 配置字段
 
 `cordis.patch.yml` 的 `stall-guard` 行支持以下配置：
@@ -112,45 +103,6 @@ dsh plugin --profile <profile-name> install
 | `judgeTimeoutMs` | `60000` | 判定调用超时 |
 
 判定模型不能是当前监测范围命中的模型；否则保存会被拒绝。
-
-## 文件结构
-
-```text
-dsh-stall-guard/
-├── index.js            # Host 侧：事件监听、判定调用、续跑、HTTP API
-├── client.js           # Web 客户端：侧边栏入口、配置页、状态轮询
-├── cordis.patch.yml    # Bundle patch：插入 stall-guard 配置行
-├── package.json        # DSH bundle/client 声明
-├── icon.svg            # 侧边栏图标
-├── locale/
-│   ├── zh.json
-│   └── en.json
-└── README.md
-```
-
-## 开发
-
-- Host 侧是原生 ESM，无构建步骤。
-- Client 侧是 `window.__ModuleLoader__.load()` 手写 CJS bundle；不要使用 JSX/TypeScript，直接用 `React.createElement`。
-- 修改后做基本语法检查：
-
-```bash
-node --check index.js
-node --check client.js
-```
-
-- 插件客户端重新加载或重启 DSH 后再验证面板；Host 侧改变还需要重启 DSH 进程。
-
-## 排查
-
-- **面板白屏**：查看 `~/Library/Logs/DeepSeek Harness/crash-*.log`，优先检查 slot 报错和 `web boot` 失败。
-- **没有判定记录**：
-  - 确认 `enabled: true`；
-  - 确认 `watchMode` 与当前 provider/model 匹配；
-  - 精确选择模式下 `watchRoutes` 不能为空；
-  - 正则模式下表达式必须能匹配 `provider/model`。
-- **判定失败**：检查判定模型是否在对应 provider 的模型列表内、API Key 是否可用，以及是否误把被监测模型配置成判定模型。
-- **保存后配置没生效**：确认保存返回 `persisted: true`；如果 profile 没有 `configEditor`，配置只会保留在内存中，重启后会恢复。
 
 ## 版本
 
